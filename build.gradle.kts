@@ -37,7 +37,7 @@ kotlin {
 
 tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     archiveBaseName = "WSTG Checklist"
-//    minimize()
+    minimize()
     manifest {
         attributes(
             "Implementation-Title" to project.name,

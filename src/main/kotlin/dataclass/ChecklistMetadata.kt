@@ -1,7 +1,5 @@
 package io.github.d0ublew.bapp.starter.dataclass
 
-import burp.api.montoya.http.message.HttpRequestResponse
-
 data class Checklist(
     val id: String,
     val title: String,

@@ -5,3 +5,4 @@ package io.github.d0ublew.bapp.starter
 
 val EXT_NAME = "WSTG Checklist"
 val EXT_VERSION = "1.0.0"
+val PERSISTENCE_SIGNATURE_KEY = "WSTG-BY-MORR3"

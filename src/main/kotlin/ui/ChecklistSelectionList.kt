@@ -43,22 +43,20 @@ class ChecklistSelectionList(
 
         val passed = JMenuItem("PASSED")
         passed.addActionListener {
-            logger.logToOutput("PASSED → ${checklist.id}")
-
             val selected = event.selectedRequestResponses()
-            for (selected in selected) {
-                storage.add(checklist.id, selected, "PASSED")
+            for (select in selected) {
+                logger.logToOutput("PASSED → ${checklist.id} - ${select.request().url()}")
+                storage.add(checklist.id, select, "PASSED")
             }
 
         }
 
         val issue = JMenuItem("ISSUE")
         issue.addActionListener {
-            logger.logToOutput("ISSUE → ${checklist.id}")
-
             val selected = event.selectedRequestResponses()
-            for (selected in selected) {
-                storage.add(checklist.id, selected, "ISSUE")
+            for (select in selected) {
+                logger.logToOutput("ISSUE → ${checklist.id} - ${select.request().url()}")
+                storage.add(checklist.id, select, "ISSUE")
             }
         }
 

@@ -3,39 +3,45 @@ package io.github.d0ublew.bapp.starter
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.message.HttpRequestResponse
 import burp.api.montoya.logging.Logging
-import java.util.UUID
 import io.github.d0ublew.bapp.starter.dataclass.CHECKLIST
+import io.github.d0ublew.bapp.starter.dataclass.Checklist
+import io.github.d0ublew.bapp.starter.dataclass.ChecklistResult
+import java.util.*
+
 
 class Storage (
     private val api: MontoyaApi,
     private val logger: Logging
 ) {
     private val persistence = api.persistence().extensionData()
-    private val persistenceSignatureKey = "wstg"
+    private val persistenceSignatureKey = PERSISTENCE_SIGNATURE_KEY
 
-    private val checklists = CHECKLIST.groupBy { it.id }
+    private val checklists = CHECKLIST.groupBy { it.id }.mapValues { it.value.first() }
 
     fun add(checklistId: String, httpRequestResponse: HttpRequestResponse, status: String) {
         val resultId = UUID.randomUUID().toString()
+        val key = generateKey(checklistId, resultId, status)
 
-        val key = "$persistenceSignatureKey:$checklistId:$resultId:$status"
         persistence.setHttpRequestResponse(key, httpRequestResponse)
     }
 
-    fun debug() {
-        logger.logToOutput("========== WSTG STORAGE DEBUG ==========")
+    fun delete(checklistId: String, resultId: String, status: String) {
+        val key = generateKey(checklistId, resultId, status)
+
+        persistence.deleteHttpRequestResponse(key)
+    }
+
+    fun get(): ArrayList<ChecklistResult> {
+        val results: ArrayList<ChecklistResult> = arrayListOf()
+
 
         persistence.httpRequestResponseKeys()
             .asSequence()
             .filter { it.startsWith(persistenceSignatureKey) }
             .forEach { key ->
-
-                logger.logToOutput("Key: $key")
-
                 val parts = key.split(":")
 
-                if (parts.size < 4) {
-                    logger.logToOutput("Invalid key format, skipped")
+                if (parts.size != 4) {
                     return@forEach
                 }
 
@@ -43,31 +49,25 @@ class Storage (
                 val resultId = parts[2]
                 val status = parts[3]
 
-                logger.logToOutput("Checklist : $checklistId")
-                logger.logToOutput("Result ID : $resultId")
-                logger.logToOutput("Status    : $status")
+                val checklist = checklists[checklistId] ?: return@forEach
+                val httpRequestResponse = persistence.getHttpRequestResponse(key) ?: return@forEach
 
-                val checklist = checklists[checklistId]
-                logger.logToOutput("Checklist Meta: $checklist")
 
-                val rr = persistence.getHttpRequestResponse(key)
-                if (rr == null) {
-                    logger.logToOutput("⚠ No HttpRequestResponse found")
-                    return@forEach
-                }
+                val result = ChecklistResult(
+                    resultId,
+                    checklist,
+                    httpRequestResponse,
+                    status
+                )
 
-                val request = rr.request()
-                val response = rr.response()
+                results.add(result)
 
-                logger.logToOutput("--- HTTP REQUEST ---")
-                logger.logToOutput(request.toString())
-
-                logger.logToOutput("--- HTTP RESPONSE ---")
-                logger.logToOutput(response.toString())
             }
 
-        logger.logToOutput("=======================================")
+        return results
     }
 
-
+    private fun generateKey(checklistId: String, resultId: String, status: String): String{
+        return "$persistenceSignatureKey:$checklistId:$resultId:$status"
+    }
 }

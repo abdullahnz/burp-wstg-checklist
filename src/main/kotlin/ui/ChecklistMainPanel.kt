@@ -93,13 +93,21 @@ class ChecklistMainPanel(
 
     private fun buildTable(): JScrollPane {
         val columnNames = arrayOf(
-            "No.", "ID", "Title", "Name", "Host", "Path", "Passed"
+            "No.", "ResultId", "ID", "Title", "Name", "Host", "Path", "Passed"
         )
+
         val tableModel = DefaultTableModel(columnNames, 0)
 
         fillTable(tableModel)
 
         requestTable = JTable(tableModel)
+
+        // hide resultid
+        requestTable.columnModel.getColumn(1).apply {
+            minWidth = 0
+            maxWidth = 0
+            width = 0
+        }
 
         val sorter = TableRowSorter(requestTable.model)
 
@@ -118,15 +126,15 @@ class ChecklistMainPanel(
         requestTable.columnModel
             .getColumn(statusColumnIndex)
             .cellRenderer = StatusCheckboxRenderer()
-        
 
-        installPopupDeleteItem()
-//        bindCtrlOAction()
+
+        installPopupMenus()
+        bindCtrlOAction()
 
         resizeColumnsToFitContent(requestTable)
 
         requestTable.selectionModel.addListSelectionListener(
-            tableSelectionListener(checklistResults as ArrayList<ChecklistResult>)
+            tableSelectionListener()
         )
 
 
@@ -189,19 +197,26 @@ class ChecklistMainPanel(
         return index - 1
     }
 
-    private fun tableSelectionListener(checklistResults: ArrayList<ChecklistResult>): ListSelectionListener =
+    private fun tableSelectionListener(): ListSelectionListener =
         ListSelectionListener {
-            val index = getSelectedRowIndex()
-            if (index == -1) return@ListSelectionListener
 
-            val result = checklistResults.getOrNull(index) ?: return@ListSelectionListener
+            if (it.valueIsAdjusting) return@ListSelectionListener
 
-            val req = result.httpRequestResponse.request()
-            val res = result.httpRequestResponse.response()
+            val viewRow = requestTable.selectedRow
+            if (viewRow == -1) return@ListSelectionListener
 
-            requestEditor.request = req
-            responseEditor.response = res
-    }
+            val modelRow = requestTable.convertRowIndexToModel(viewRow)
+
+            val resultId = requestTable.model
+                .getValueAt(modelRow, 1) as? String
+                ?: return@ListSelectionListener
+
+            val result = storage.getByResultId(resultId) ?: return@ListSelectionListener
+
+            requestEditor.request = result.httpRequestResponse.request()
+            responseEditor.response = result.httpRequestResponse.response()
+        }
+
 
     private fun bindCtrlOAction() {
         val inputMap = requestTable.getInputMap(JComponent.WHEN_FOCUSED)
@@ -221,8 +236,13 @@ class ChecklistMainPanel(
         logging.raiseInfoEvent("Ctrl+O key binding registered")
     }
 
-    private fun installPopupDeleteItem() {
+    private fun installPopupMenus() {
         val popupMenu = JPopupMenu()
+
+        val sendToOrganizer = JMenuItem("Send to Organizer")
+        sendToOrganizer.addActionListener {
+            sendSelectedRowToOrganizer()
+        }
 
         val deleteItem = JMenuItem("Delete item")
         deleteItem.addActionListener {
@@ -230,6 +250,7 @@ class ChecklistMainPanel(
         }
 
         popupMenu.add(deleteItem)
+        popupMenu.add(sendToOrganizer)
 
         requestTable.addMouseListener(object : MouseAdapter() {
             override fun mousePressed(e: MouseEvent) {
@@ -254,6 +275,8 @@ class ChecklistMainPanel(
     }
 
     private fun deleteSelectedRow() {
+        val result = getSelectedResult() ?: return
+
         val confirm = JOptionPane.showConfirmDialog(
             rootPanel,
             "Delete selected item?",
@@ -263,17 +286,16 @@ class ChecklistMainPanel(
 
         if (confirm != JOptionPane.YES_OPTION) return
 
-        val index = getSelectedRowIndex()
-        val result = checklistResults[index]
-
-        storage.delete(result.checklist.id, result.resultId, result.status)
-
+        storage.delete(result.resultId)
         reloadTableFromStorage()
     }
 
+
     private fun exportJsonHandler() {
         try {
-            if (checklistResults.isEmpty()) {
+            val results = storage.get()
+
+            if (results.isEmpty()) {
                 JOptionPane.showMessageDialog(
                     rootPanel,
                     "No data to export",
@@ -292,9 +314,9 @@ class ChecklistMainPanel(
             if (choice != JFileChooser.APPROVE_OPTION) return
 
             val file = chooser.selectedFile
-            val results = ArrayList<ChecklistExport>()
+            val exports = ArrayList<ChecklistExport>()
 
-            checklistResults.forEach { result ->
+            results.forEach { result ->
                 val http = result.httpRequestResponse
                 val request = http.request()
                 val response = http.response()
@@ -316,7 +338,7 @@ class ChecklistMainPanel(
                     )
                 }
 
-                results.add(
+                exports.add(
                     ChecklistExport(
                         id = result.checklist.id,
                         title = result.checklist.title,
@@ -333,11 +355,9 @@ class ChecklistMainPanel(
                 .disableHtmlEscaping()
                 .create()
 
-            file.writeText(gson.toJson(results), Charsets.UTF_8)
+            file.writeText(gson.toJson(exports), Charsets.UTF_8)
 
-            logging.raiseInfoEvent(
-                "Checklist exported to ${file.absolutePath}"
-            )
+            logging.raiseInfoEvent("Checklist exported to ${file.absolutePath}")
 
             JOptionPane.showMessageDialog(
                 rootPanel,
@@ -352,22 +372,19 @@ class ChecklistMainPanel(
         }
     }
 
+
     private fun sendSelectedRowToOrganizer() {
-        val index = getSelectedRowIndex()
+        val result = getSelectedResult() ?: return
 
-        if (index == -1) {
-            return
-        }
+        val http = result.httpRequestResponse
 
-        val result = checklistResults[index]
-        val httpRequestResponse = result.httpRequestResponse
+        val notes = http.annotations()
+            .withNotes("[${result.status}] ${result.checklist.id}: ${result.checklist.title} - ${result.checklist.name}")
 
-        val annotations = httpRequestResponse.annotations()
-        val notes = annotations.withNotes("[${result.status}] ${result.checklist.id}: ${result.checklist.title} - ${result.checklist.name}")
-
-        val organizer = api.organizer()
-        organizer.sendToOrganizer(httpRequestResponse.withAnnotations(notes))
+        api.organizer()
+            .sendToOrganizer(http.withAnnotations(notes))
     }
+
 
     private fun resizeColumnsToFitContent(table: JTable) {
         val columnModel: TableColumnModel = table.columnModel
@@ -408,18 +425,35 @@ class ChecklistMainPanel(
         checklistResults = storage.get()
         model.rowCount = 0
 
-        checklistResults.forEachIndexed { index, (_, checklist, rr, status) ->
+        checklistResults.forEachIndexed { index, result ->
             val row = arrayOf(
                 index + 1,
-                checklist.id,
-                checklist.title,
-                checklist.name,
-                rr.request().httpService().host(),
-                rr.request().pathWithoutQuery(),
-                status
+                result.resultId,
+                result.checklist.id,
+                result.checklist.title,
+                result.checklist.name,
+                result.httpRequestResponse.request().httpService().host(),
+                result.httpRequestResponse.request().pathWithoutQuery(),
+                result.status
             )
 
             model.addRow(row)
         }
     }
+
+    private fun getSelectedResult(): ChecklistResult? {
+        val viewRow = requestTable.selectedRow
+        if (viewRow == -1) return null
+
+        val modelRow = requestTable.convertRowIndexToModel(viewRow)
+
+        // column 1 = hidden ResultId
+        val resultId = requestTable.model
+            .getValueAt(modelRow, 1) as? String
+            ?: return null
+
+        return storage.getByResultId(resultId)
+    }
+
+
 }

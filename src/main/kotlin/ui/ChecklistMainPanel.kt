@@ -2,7 +2,6 @@ package io.github.d0ublew.bapp.starter.ui
 
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.logging.Logging
-import burp.api.montoya.organizer.Organizer
 import burp.api.montoya.ui.editor.HttpRequestEditor
 import burp.api.montoya.ui.editor.HttpResponseEditor
 import com.google.gson.GsonBuilder
@@ -26,6 +25,7 @@ import javax.swing.event.AncestorListener
 import javax.swing.event.ListSelectionListener
 import javax.swing.table.DefaultTableModel
 import javax.swing.table.TableColumnModel
+import javax.swing.table.TableRowSorter
 
 class ChecklistMainPanel(
     private val api: MontoyaApi,
@@ -101,18 +101,24 @@ class ChecklistMainPanel(
 
         requestTable = JTable(tableModel)
 
-//        val headerRenderer = requestTable.tableHeader.defaultRenderer
-//        if (headerRenderer is JLabel) {
-//            headerRenderer.horizontalAlignment = SwingConstants.LEFT
-//        }
+        val sorter = TableRowSorter(requestTable.model)
+
+        sorter.setComparator(0) { a, b ->
+            (a as Int).compareTo(b as Int)
+        }
+        requestTable.rowSorter = sorter
+
+        val headerRenderer = requestTable.tableHeader.defaultRenderer
+        if (headerRenderer is JLabel) {
+            headerRenderer.horizontalAlignment = SwingConstants.LEFT
+        }
 
         val statusColumnIndex = columnNames.size - 1
 
         requestTable.columnModel
             .getColumn(statusColumnIndex)
             .cellRenderer = StatusCheckboxRenderer()
-
-//        requestTable.autoCreateRowSorter = true
+        
 
         installPopupDeleteItem()
 //        bindCtrlOAction()

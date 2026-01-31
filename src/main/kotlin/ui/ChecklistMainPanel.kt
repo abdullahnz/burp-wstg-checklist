@@ -1,7 +1,10 @@
 package io.github.d0ublew.bapp.starter.ui
 
+import burp.api.montoya.MontoyaApi
 import burp.api.montoya.logging.Logging
 import burp.api.montoya.organizer.Organizer
+import burp.api.montoya.ui.editor.HttpRequestEditor
+import burp.api.montoya.ui.editor.HttpResponseEditor
 import com.google.gson.GsonBuilder
 import io.github.d0ublew.bapp.starter.Storage
 import io.github.d0ublew.bapp.starter.dataclass.ChecklistExport
@@ -9,7 +12,10 @@ import io.github.d0ublew.bapp.starter.dataclass.ChecklistExportRequest
 import io.github.d0ublew.bapp.starter.dataclass.ChecklistExportResponse
 import io.github.d0ublew.bapp.starter.dataclass.ChecklistResult
 import io.github.d0ublew.bapp.starter.encode
-import java.awt.*
+import io.github.d0ublew.bapp.starter.isDarkTheme
+import java.awt.BorderLayout
+import java.awt.Color
+import java.awt.Font
 import java.awt.event.ActionEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -20,10 +26,9 @@ import javax.swing.event.AncestorListener
 import javax.swing.event.ListSelectionListener
 import javax.swing.table.DefaultTableModel
 import javax.swing.table.TableColumnModel
-import kotlin.math.log
 
 class ChecklistMainPanel(
-    private val organizer: Organizer,
+    private val api: MontoyaApi,
     private val storage: Storage,
     private val logging: Logging
 ) {
@@ -32,8 +37,8 @@ class ChecklistMainPanel(
     private var checklistResults = mutableListOf<ChecklistResult>()
 
     private lateinit var requestTable: JTable
-    private lateinit var requestTextArea: JTextArea
-    private lateinit var responseTextArea: JTextArea
+    private lateinit var requestEditor: HttpRequestEditor
+    private lateinit var responseEditor: HttpResponseEditor
 
     init {
         logging.raiseInfoEvent("Initializing ChecklistMainPanel")
@@ -88,7 +93,7 @@ class ChecklistMainPanel(
 
     private fun buildTable(): JScrollPane {
         val columnNames = arrayOf(
-            "#", "ID", "Title", "Name", "Host", "Path", "Status"
+            "No.", "ID", "Title", "Name", "Host", "Path", "Passed"
         )
         val tableModel = DefaultTableModel(columnNames, 0)
 
@@ -96,15 +101,21 @@ class ChecklistMainPanel(
 
         requestTable = JTable(tableModel)
 
-        val headerRenderer = requestTable.tableHeader.defaultRenderer
-        if (headerRenderer is JLabel) {
-            headerRenderer.horizontalAlignment = SwingConstants.LEFT
-        }
+//        val headerRenderer = requestTable.tableHeader.defaultRenderer
+//        if (headerRenderer is JLabel) {
+//            headerRenderer.horizontalAlignment = SwingConstants.LEFT
+//        }
 
-        requestTable.autoCreateRowSorter = true
+        val statusColumnIndex = columnNames.size - 1
 
-        installTablePopupMenu()
-        bindCtrlOAction()
+        requestTable.columnModel
+            .getColumn(statusColumnIndex)
+            .cellRenderer = StatusCheckboxRenderer()
+
+//        requestTable.autoCreateRowSorter = true
+
+        installPopupDeleteItem()
+//        bindCtrlOAction()
 
         resizeColumnsToFitContent(requestTable)
 
@@ -117,27 +128,47 @@ class ChecklistMainPanel(
     }
 
     private fun buildBottomPanel(): JSplitPane {
-        val bottomSplitPane = JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
-        bottomSplitPane.resizeWeight = 0.5
+        requestEditor = api.userInterface().createHttpRequestEditor()
+        responseEditor = api.userInterface().createHttpResponseEditor()
 
-        requestTextArea = createTextArea("Request")
-        responseTextArea = createTextArea("Response")
+        val request = createPanel("Request")
+        val response = createPanel("Response")
 
-        bottomSplitPane.leftComponent = JScrollPane(requestTextArea)
-            .apply { border = BorderFactory.createTitledBorder("Request") }
+        request.add(requestEditor.uiComponent())
+        response.add(responseEditor.uiComponent())
 
-        bottomSplitPane.rightComponent = JScrollPane(responseTextArea)
-            .apply { border = BorderFactory.createTitledBorder("Response") }
+        request.background = requestEditor.uiComponent().background
+        response.background = responseEditor.uiComponent().background
 
-        return bottomSplitPane
+        val panel = JSplitPane(SwingConstants.VERTICAL,
+            request,
+            response)
+
+        panel.resizeWeight = 0.5
+
+        return panel
     }
 
-    private fun createTextArea(defaultText: String): JTextArea =
-        JTextArea("$defaultText details will appear here...").apply {
-            font = Font("Monospaced", Font.PLAIN, 11)
-            isEditable = false
-            lineWrap = true
+    private fun createPanel(text: String): JPanel {
+        val panel = JPanel(BorderLayout())
+
+        val label = JLabel(text)
+        label.font = label.font.deriveFont(Font.BOLD, 13f)
+        if (isDarkTheme()) {
+            label.foreground = Color.WHITE
         }
+        label.horizontalAlignment = SwingConstants.LEFT
+        label.border = BorderFactory.createEmptyBorder(
+            20,
+            10,
+            4,
+            10
+        )
+
+        panel.add(label, BorderLayout.NORTH)
+
+        return panel
+    }
 
     private fun getSelectedRowIndex(): Int {
         val selectedRow = requestTable.selectedRow
@@ -154,8 +185,6 @@ class ChecklistMainPanel(
 
     private fun tableSelectionListener(checklistResults: ArrayList<ChecklistResult>): ListSelectionListener =
         ListSelectionListener {
-            if (it.valueIsAdjusting) return@ListSelectionListener
-
             val index = getSelectedRowIndex()
             if (index == -1) return@ListSelectionListener
 
@@ -164,12 +193,8 @@ class ChecklistMainPanel(
             val req = result.httpRequestResponse.request()
             val res = result.httpRequestResponse.response()
 
-            requestTextArea.text = req.toString().trimIndent()
-            responseTextArea.text = res.toString().trimIndent()
-
-            // scroll to top
-            requestTextArea.caretPosition = 0
-            responseTextArea.caretPosition = 0
+            requestEditor.request = req
+            responseEditor.response = res
     }
 
     private fun bindCtrlOAction() {
@@ -190,7 +215,7 @@ class ChecklistMainPanel(
         logging.raiseInfoEvent("Ctrl+O key binding registered")
     }
 
-    private fun installTablePopupMenu() {
+    private fun installPopupDeleteItem() {
         val popupMenu = JPopupMenu()
 
         val deleteItem = JMenuItem("Delete item")
@@ -310,7 +335,7 @@ class ChecklistMainPanel(
 
             JOptionPane.showMessageDialog(
                 rootPanel,
-                "Export completed:\n${file.absolutePath}",
+                "Export saved at ${file.absolutePath}",
                 "Export JSON",
                 JOptionPane.INFORMATION_MESSAGE
             )
@@ -334,6 +359,7 @@ class ChecklistMainPanel(
         val annotations = httpRequestResponse.annotations()
         val notes = annotations.withNotes("[${result.status}] ${result.checklist.id}: ${result.checklist.title} - ${result.checklist.name}")
 
+        val organizer = api.organizer()
         organizer.sendToOrganizer(httpRequestResponse.withAnnotations(notes))
     }
 

@@ -4,7 +4,6 @@ import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.message.HttpRequestResponse
 import burp.api.montoya.logging.Logging
 import io.github.d0ublew.bapp.starter.dataclass.CHECKLIST
-import io.github.d0ublew.bapp.starter.dataclass.Checklist
 import io.github.d0ublew.bapp.starter.dataclass.ChecklistResult
 import java.util.*
 

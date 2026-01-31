@@ -8,7 +8,6 @@ import io.github.d0ublew.bapp.starter.ui.ChecklistSelectionList
 class App : BurpExtension {
     override fun initialize(api: MontoyaApi) {
         val logger = api.logging()
-        val organizer = api.organizer()
         val storage = Storage(api, logger)
 
         api.extension().setName(EXT_NAME)
@@ -25,7 +24,7 @@ class App : BurpExtension {
         // checklist tab
         api.userInterface().registerSuiteTab(
             EXT_NAME, ChecklistMainPanel(
-                organizer,
+                api,
                 storage,
                 logger
             ).getPanel()

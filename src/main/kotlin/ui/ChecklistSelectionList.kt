@@ -44,11 +44,20 @@ class ChecklistSelectionList(
         val passed = JMenuItem("PASSED")
         passed.addActionListener {
             val selected = event.selectedRequestResponses()
+
             for (select in selected) {
                 logger.logToOutput("PASSED → ${checklist.id} - ${select.request().url()}")
                 storage.add(checklist.id, select, "PASSED")
             }
 
+            // handle req res from repeater
+            val editor = event.messageEditorRequestResponse()
+
+            if (editor.isPresent) {
+                val current = editor.get().requestResponse()
+                logger.logToOutput("PASSED → ${checklist.id} - ${current.request().url()}")
+                storage.add(checklist.id, current, "PASSED")
+            }
         }
 
         val issue = JMenuItem("ISSUE")
@@ -57,6 +66,15 @@ class ChecklistSelectionList(
             for (select in selected) {
                 logger.logToOutput("ISSUE → ${checklist.id} - ${select.request().url()}")
                 storage.add(checklist.id, select, "ISSUE")
+            }
+
+            // handle req res from repeater
+            val editor = event.messageEditorRequestResponse()
+
+            if (editor.isPresent) {
+                val current = editor.get().requestResponse()
+                logger.logToOutput("ISSUE → ${checklist.id} - ${current.request().url()}")
+                storage.add(checklist.id, current, "ISSUE")
             }
         }
 

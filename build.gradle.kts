@@ -36,7 +36,7 @@ kotlin {
 }
 
 tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
-    archiveBaseName = "WSTG Checklist"
+    archiveBaseName = "burp-wstg-checklist"
     minimize()
     manifest {
         attributes(
